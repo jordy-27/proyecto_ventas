@@ -1,13 +1,17 @@
 from shared.herramientas import (
     imprimir_titulo, imprimir_exito, imprimir_error, imprimir_info, confirmar
 )
-from views import ClienteController, ProductoController, VentaController
+from models import Devolucion
+from views import (ClienteController, ProductoController, VentaController,
+                   DevolucionController)
 
 # Se crea UN solo controlador de cada tipo.
 # A ventas se le pasan los MISMOS clientes y productos.
+# A devoluciones se le pasan los MISMOS ventas y productos.
 clientes = ClienteController()
 productos = ProductoController()
 ventas = VentaController(clientes, productos)
+devoluciones = DevolucionController(ventas, productos)
 
 
 # =====================================================================
@@ -35,7 +39,7 @@ def mostrar_resultado(exito, mensaje):
 
 
 def mostrar_lista(objetos, vacio="No hay registros todavía."):
-    """Sirve para clientes, productos y ventas: cada modelo sabe mostrarse."""
+    """Sirve para clientes, productos, ventas y devoluciones: cada modelo sabe mostrarse."""
     if not objetos:
         imprimir_info(vacio)
         return
@@ -256,15 +260,99 @@ def anular_venta():
     pausa()
 
 
+# =====================================================================
+# MENÚ DE DEVOLUCIONES
+# =====================================================================
+
+def registrar_devolucion():
+    imprimir_titulo("REGISTRAR DEVOLUCIÓN")
+    id_venta = pedir_entero("Id de la venta / factura: ")
+
+    # 1) la factura; si es None, la venta no existe
+    texto = ventas.comprobante(id_venta)
+    if texto is None:
+        imprimir_error("No existe esa venta")
+        return pausa()
+    print(texto)
+
+    # 2) cuánto se vendió, cuánto ya se devolvió y cuánto queda
+    venta = ventas.obtener(id_venta)
+    devuelto = devoluciones.cantidad_devuelta(id_venta)
+    disponible = devoluciones.cantidad_disponible(venta)
+    print()
+    imprimir_info(f"Vendidas: {venta.cantidad} · Ya devueltas: {devuelto} · "
+                  f"Disponibles para devolver: {disponible}")
+    if disponible == 0:
+        imprimir_error("Esta venta no tiene unidades disponibles para devolver")
+        return pausa()
+
+    # 3) cantidad y motivo
+    cantidad = input("\nCantidad a devolver: ")
+    print("Motivos:")
+    for numero, motivo in enumerate(Devolucion.MOTIVOS, start=1):   # la TUPLA de motivos
+        print(f"  {numero}. {motivo}")
+    entrada = input("Motivo (número o nombre): ").strip().lower()
+    if entrada.isdigit() and 1 <= int(entrada) <= len(Devolucion.MOTIVOS):
+        entrada = Devolucion.MOTIVOS[int(entrada) - 1]
+
+    datos = {"venta_id": id_venta, "cantidad": cantidad, "motivo": entrada}
+    mostrar_resultado(*devoluciones.crear(datos))
+    pausa()
+
+
+def consultar_devoluciones():
+    imprimir_titulo("DEVOLUCIONES DE UNA VENTA")
+    id_venta = pedir_entero("Id de la venta: ")
+    texto = ventas.comprobante(id_venta)
+    if texto is None:
+        imprimir_error("No existe esa venta")
+        return pausa()
+
+    print(texto)
+    print()
+    lista = devoluciones.devoluciones_de_venta(id_venta)
+    mostrar_lista(lista, "Esta venta no tiene devoluciones.")
+
+    venta = ventas.obtener(id_venta)
+    reembolsado = sum(d.monto for d in lista)
+    imprimir_info(f"Total reembolsado: ${reembolsado:.2f} · "
+                  f"Disponibles para devolver: {devoluciones.cantidad_disponible(venta)}")
+    pausa()
+
+
+def listar_devoluciones():
+    imprimir_titulo("DEVOLUCIONES")
+    mostrar_lista(devoluciones.leer(), "Todavía no hay devoluciones.")
+    pausa()
+
+
+def ver_nota_credito():
+    imprimir_titulo("NOTA DE CRÉDITO")
+    texto = devoluciones.nota_credito(pedir_entero("Id de la devolución: "))
+    if texto is None:
+        imprimir_error("No existe esa devolución")
+    else:
+        print(texto)
+    pausa()
+
+
+# =====================================================================
+# RESUMEN
+# =====================================================================
+
 def resumen():
     imprimir_titulo("RESUMEN")
-    print(f"  Clientes  : {len(clientes.leer())}")
-    print(f"  Ciudades  : {', '.join(clientes.ciudades()) or '-'}")
-    print(f"  Productos : {len(productos.leer())}")
+    print(f"  Clientes         : {len(clientes.leer())}")
+    print(f"  Ciudades         : {', '.join(clientes.ciudades()) or '-'}")
+    print(f"  Productos        : {len(productos.leer())}")
     bajos = productos.con_stock_bajo()
-    print(f"  Stock bajo: {', '.join(p.nombre for p in bajos) or 'ninguno'}")
-    print(f"  Ventas    : {len(ventas.leer())}")
-    print(f"  Vendido   : ${ventas.total_vendido():.2f}")
+    print(f"  Stock bajo       : {', '.join(p.nombre for p in bajos) or 'ninguno'}")
+    print(f"  Ventas           : {len(ventas.leer())}")
+    print(f"  Vendido          : ${ventas.total_vendido():.2f}")
+    print(f"  Devoluciones     : {len(devoluciones.leer())}")
+    print(f"  Total reembolsado: ${devoluciones.total_reembolsado():.2f}")
+    neto = ventas.total_vendido() - devoluciones.total_reembolsado()
+    print(f"  Ventas netas     : ${neto:.2f}")
     pausa()
 
 
@@ -300,9 +388,17 @@ MENU_VENTAS = {
     "0": ("Volver", None),
 }
 
+MENU_DEVOLUCIONES = {
+    "1": ("Registrar devolución", registrar_devolucion),
+    "2": ("Consultar devoluciones de una venta", consultar_devoluciones),
+    "3": ("Ver todas", listar_devoluciones),
+    "4": ("Ver nota de crédito", ver_nota_credito),
+    "0": ("Volver", None),
+}
+
 
 def ejecutar_menu(titulo, opciones):
-    """Un solo bucle para los tres submenús."""
+    """Un solo bucle para todos los submenús."""
     while True:
         imprimir_titulo(titulo)
         for tecla, (texto, _funcion) in opciones.items():
@@ -327,7 +423,8 @@ def main():
         print("  1. Clientes")
         print("  2. Productos")
         print("  3. Ventas")
-        print("  4. Resumen")
+        print("  4. Devoluciones")
+        print("  5. Resumen")
         print("  0. Salir\n")
 
         tecla = input("Opción: ").strip()
@@ -338,6 +435,8 @@ def main():
         elif tecla == "3":
             ejecutar_menu("VENTAS", MENU_VENTAS)
         elif tecla == "4":
+            ejecutar_menu("DEVOLUCIONES", MENU_DEVOLUCIONES)
+        elif tecla == "5":
             resumen()
         elif tecla == "0":
             imprimir_info("¡Hasta luego! 👋")

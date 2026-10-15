@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "venta_id": 1,
+    "cantidad": 1,
+    "motivo": "defectuoso",
+    "monto": 0.57,
+    "fecha": "2026-10-14"
+  },
+  {
+    "id": 2,
+    "venta_id": 2,
+    "cantidad": 2,
+    "motivo": "arrepentido",
+    "monto": 2.3,
+    "fecha": "2026-10-14"
+  },
+  {
+    "id": 3,
+    "venta_id": 3,
+    "cantidad": 3,
+    "motivo": "equivocado",
+    "monto": 2.24,
+    "fecha": "2026-10-14"
+  }
+]
